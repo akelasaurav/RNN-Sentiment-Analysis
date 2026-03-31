@@ -3,55 +3,80 @@ import pickle
 import numpy as np
 from tensorflow.keras.models import load_model
 from tensorflow.keras.preprocessing.sequence import pad_sequences
-from tensorflow.keras.models import load_model
+
 # ------------------------------
-# Load saved files
+# Load resources safely
 # ------------------------------
 @st.cache_resource
 def load_resources():
-    model = load_model("lstm_model.h5", compile=False)
-    with open("tokenizer.pkl", "rb") as f:
-        tokenizer = pickle.load(f)
-    with open("max_len.pkl", "rb") as f:
-        max_len = pickle.load(f)
-    return model, tokenizer, max_len
+    try:
+        # Try loading modern format first
+        try:
+            model = load_model("model.keras", compile=False)
+        except:
+            model = load_model("model.keras", compile=False)
 
-model, tokenizer, max_len = load_resources()
+        # Load tokenizer
+        with open("tokenizer.pkl", "rb") as f:
+            tokenizer = pickle.load(f)
+
+        # Load max length
+        with open("max_len.pkl", "rb") as f:
+            max_len = pickle.load(f)
+
+        # Create reverse word index (FAST lookup)
+        index_to_word = {index: word for word, index in tokenizer.word_index.items()}
+
+        return model, tokenizer, max_len, index_to_word
+
+    except Exception as e:
+        st.error(f"❌ Error loading resources: {e}")
+        return None, None, None, None
+
+
+model, tokenizer, max_len, index_to_word = load_resources()
 
 # ------------------------------
 # Prediction function
 # ------------------------------
 def predict_next_word(text):
-    sequence = tokenizer.texts_to_sequences([text])[0]
-    sequence = pad_sequences([sequence], maxlen=max_len-1, padding='pre')
+    try:
+        sequence = tokenizer.texts_to_sequences([text])[0]
 
-    preds = model.predict(sequence, verbose=0)
-    predicted_index = np.argmax(preds)
+        if len(sequence) == 0:
+            return "No valid input"
 
-    for word, index in tokenizer.word_index.items():
-        if index == predicted_index:
-            return word
-    return ""
+        sequence = pad_sequences([sequence], maxlen=max_len - 1, padding='pre')
+
+        preds = model.predict(sequence, verbose=0)
+        predicted_index = np.argmax(preds)
+
+        return index_to_word.get(predicted_index, "Not found")
+
+    except Exception as e:
+        return f"Error: {e}"
 
 # ------------------------------
-# Streamlit UI
+# UI
 # ------------------------------
 st.set_page_config(page_title="Next Word Prediction", layout="centered")
 
 st.title("🧠 Next Word Prediction (LSTM)")
-st.write("Enter a sentence and the model will predict the **next word**.")
+st.write("Type a sentence and predict the **next word** using Deep Learning.")
 
-user_input = st.text_input("✍️ Enter text:", placeholder="Type a sentence here...")
+user_input = st.text_input("✍️ Enter text:")
 
 if st.button("Predict Next Word"):
-    if user_input.strip() == "":
-        st.warning("Please enter some text.")
+    if model is None:
+        st.error("❌ Model not loaded properly")
+    elif user_input.strip() == "":
+        st.warning("⚠️ Please enter some text")
     else:
-        next_word = predict_next_word(user_input)
-        st.success(f"**Predicted Next Word:** {next_word}")
+        result = predict_next_word(user_input)
+        st.success(f"👉 Predicted Next Word: {result}")
 
 # ------------------------------
 # Footer
 # ------------------------------
 st.markdown("---")
-st.caption("LSTM-based Next Word Prediction using Streamlit")
+st.caption("🚀 LSTM-based Next Word Prediction App")
